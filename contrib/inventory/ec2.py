@@ -385,7 +385,7 @@ class Ec2Inventory(object):
         except configparser.NoOptionError:
             self.pattern_exclude = None
 
-        # Instance filters (see boto and EC2 API docs). Ignore invalid filters.
+        # Instance filters (see boto and EC2 API docs). Ignore invalid filters.        
         self.ec2_instance_filters = defaultdict(list)
         if config.has_option('ec2', 'instance_filters'):
             for instance_filter in config.get('ec2', 'instance_filters', '').split(','):
@@ -396,6 +396,14 @@ class Ec2Inventory(object):
                 if not filter_key:
                     continue
                 self.ec2_instance_filters[filter_key].append(filter_value)
+
+        # Instance Filters can be AND'd or OR'd based on the filters_operator
+        # parameter, default behavior is OR'd
+        self.ec2_filter_operator = 'or'
+        if config.has_option('ec2', 'filters_operator'):
+            self.ec2_filter_operator = config.get('ec2', 'filters_operator')
+            if self.ec2_filter_operator not in ('or', 'and'):
+                self.ec2_filter_operator = 'or'
 
     def parse_cli_args(self):
         ''' Command line argument processing '''
@@ -467,8 +475,13 @@ class Ec2Inventory(object):
             conn = self.connect(region)
             reservations = []
             if self.ec2_instance_filters:
-                for filter_key, filter_values in self.ec2_instance_filters.items():
-                    reservations.extend(conn.get_all_instances(filters = { filter_key : filter_values }))
+                if self.ec2_filter_operator == 'and':
+                    reservations.extend(conn.get_all_instances(
+                        filters=dict(self.ec2_instance_filters)))
+                else:
+                    for filter_key, filter_values in self.ec2_instance_filters.items():
+                        reservations.extend(conn.get_all_instances(
+                            filters={filter_key: filter_values}))
             else:
                 reservations = conn.get_all_instances()
 
